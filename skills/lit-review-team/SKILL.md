@@ -1,22 +1,155 @@
 ---
 name: lit-review-team
-description: Conduct a CS literature review using Claude Code Agent Teams. Reads papers, explains unfamiliar terminology, and synthesizes findings into a structured review. Takes a review plan with paper list and research question.
-argument-hint: [plan-path] [num-agents]
+description: Conduct a CS literature review using a Schema-First Map-Reduce pipeline. Scaffolder generates an extraction schema, parallel Readers extract structured data from papers simultaneously, then Synthesizer reduces into a thematic review.
+argument-hint: [plan-path] [num-readers]
 disable-model-invocation: true
 ---
 
-# Literature Review Team
+# Literature Review Team (Schema-First Map-Reduce)
 
-You are coordinating a CS literature review using Claude Code Agent Teams. Read the review plan, determine the right team structure, spawn teammates, and orchestrate the review process.
+You are coordinating a CS literature review using Claude Code Agent Teams with a **parallel pipeline**. The key insight: standardize the extraction format BEFORE reading, then fan out readers in parallel.
+
+## Architecture Overview
+
+```
+Phase 0 (Schema)      Scaffolder analyzes research question
+                      -> extraction schema + reading instructions
+                      (sequential, fast)
+                                |
+Phase 1 (Map)          +--------+--------+--------+
+                       |        |        |        |
+                    Reader_1 Reader_2 Reader_3 ... Reader_N
+                    (paper A) (paper B) (paper C)
+                       |        |        |        |
+                       +--------+--------+--------+
+                       All fill same schema, tag terms
+                       (PARALLEL - biggest time savings)
+                                |
+Phase 2 (Terminology)  Scaffolder receives all tagged terms
+                       -> concept guide + glossary
+                       (sequential, fast since terms pre-tagged)
+                                |
+Phase 3 (Reduce)       Synthesizer receives:
+                       - structured extractions[]
+                       - concept guide
+                       -> thematic literature review
+```
 
 ## Arguments
 
-- **Plan path**: `$ARGUMENTS[0]` - Path to a markdown file describing the review scope
-- **Team size**: `$ARGUMENTS[1]` - Number of agents (optional, default 3)
+- **Plan path**: `$ARGUMENTS[0]` - Path to a markdown file describing the review scope. **If not provided, the skill enters interactive mode and asks the user questions to build the plan.**
+- **Num readers**: `$ARGUMENTS[1]` - Max number of parallel reader agents (optional, auto-determined from paper count)
+
+## Step 0: Get or Build the Review Plan
+
+Check if `$ARGUMENTS[0]` is provided and non-empty.
+
+### Path A: Plan file provided -> Skip to Step 1
+
+If `$ARGUMENTS[0]` is a valid file path, read it and proceed to Step 1.
+
+### Path B: No plan file -> Interactive Plan Builder
+
+If `$ARGUMENTS[0]` is empty, missing, or not provided, interactively build the plan by asking the user a series of questions using the **AskUserQuestion** tool.
+
+**Ask these questions in sequence (1-4 questions per AskUserQuestion call):**
+
+#### Round 1: Core questions
+
+Ask these 3 questions together:
+
+1. **"What is your research question or topic?"**
+   - header: "Topic"
+   - options:
+     - "I'll type my research question" (description: "Free-form research question or topic area")
+     - "Compare methods/approaches" (description: "e.g., Compare offline RL vs imitation learning for grasping")
+     - "Survey a field" (description: "e.g., Survey recent advances in diffusion models for robotics")
+     - "Background for my paper" (description: "e.g., Related work section for my submission on X")
+
+2. **"What papers should be reviewed?"**
+   - header: "Papers"
+   - options:
+     - "I'll paste URLs/titles" (description: "Provide arxiv URLs, PDF paths, DOIs, or paper titles")
+     - "Search for papers on a topic" (description: "I'll describe the topic and you find relevant papers")
+     - "I have a mix of URLs and topics" (description: "Some specific papers + some topic areas to search")
+
+3. **"What is your background level in this area?"**
+   - header: "Background"
+   - options:
+     - "New to this area" (description: "Need thorough explanations of core concepts and terminology")
+     - "Some familiarity" (description: "Know the basics but unfamiliar with advanced techniques")
+     - "Domain expert" (description: "Familiar with the field, need minimal scaffolding")
+
+#### Round 2: Details
+
+Based on Round 1 answers, ask for specifics:
+
+1. **Paper list**: If user chose to provide papers, ask them to list them. If they chose topic search, ask for the topic description. Use AskUserQuestion with a free-text option so the user can paste their list.
+
+2. **"What output format do you need?"**
+   - header: "Format"
+   - options:
+     - "Related work section" (description: "2-3 pages for a conference paper, LaTeX-ready prose")
+     - "Standalone survey" (description: "Comprehensive standalone literature review document")
+     - "Annotated bibliography" (description: "Structured summaries with brief analysis per paper")
+     - "Quick summary" (description: "Brief overview of key findings and trends")
+
+3. **"Any specific concepts or areas you find unfamiliar?"** (free-text)
+
+4. **"Where should I save the output?"** (free-text, suggest default: `./lit-review-output/`)
+
+#### Round 3: Optional context
+
+Ask these only if relevant (skip if user seems to just want a general survey):
+
+1. **"Are you writing this for a specific venue or context?"** (free-text, e.g., "ICRA 2026 submission on residual RL")
+2. **"What is your own research about?"** (free-text, helps identify the research gap -- skip if not applicable)
+
+#### After collecting answers: Generate and save the plan
+
+Assemble the answers into a plan markdown file and **write it to `./lit-review-plan.md`** (or the user's specified output directory + `/plan.md`). Show the user the generated plan and ask for confirmation before proceeding.
+
+The generated plan format:
+
+```markdown
+# Literature Review Plan
+
+## Research Question
+[From Round 1, Q1]
+
+## Papers
+- [paper 1]
+- [paper 2]
+- ...
+
+## Background Level
+[From Round 1, Q3]
+
+## Output Format
+[From Round 2, Q2]
+
+## Unfamiliar Areas
+[From Round 2, Q3 -- or "None specified"]
+
+## Research Context
+[From Round 3, Q2 -- or omit if not provided]
+
+## Target Venue
+[From Round 3, Q1 -- or omit if not provided]
+
+## Output Directory
+[From Round 2, Q4 -- default: ./lit-review-output/]
+```
+
+**After saving, tell the user**: "Plan saved to `./lit-review-plan.md`. You can reuse this file next time with `/lit-review-team ./lit-review-plan.md`."
+
+Then proceed to Step 1 using the generated plan.
+
+---
 
 ## Step 1: Read the Review Plan
 
-Read the plan document at `$ARGUMENTS[0]`. Understand:
+Read the plan document (either from `$ARGUMENTS[0]` or the one just generated). Extract:
 - What is the research question or topic?
 - What papers need to be reviewed? (arxiv URLs, PDF paths, titles, or topic areas to search)
 - What is the reader's background level? (determines scaffolding depth)
@@ -24,42 +157,44 @@ Read the plan document at `$ARGUMENTS[0]`. Understand:
 - Are there specific concepts or terminology areas the user finds unfamiliar?
 - What is the target venue or context? (e.g., "related work for my NeurIPS submission on X")
 
+**Count the papers.** This determines the parallelism strategy.
+
 ## Step 2: Determine Team Structure
 
-If team size is specified (`$ARGUMENTS[1]`), use that number of agents.
+### Routing Logic
 
-Default is 3 agents. Guidelines:
+```
+num_papers = count papers in plan
 
-- **2 agents**: Small review (≤10 papers) — one reader/scaffolder + one synthesizer
-- **3 agents** (default): Standard review — reader + scaffolder + synthesizer
-- **4 agents**: Large survey (30+ papers) or multiple sub-topics — split reading across two reader agents by sub-topic
+if num_readers specified via $ARGUMENTS[1]:
+    num_readers = $ARGUMENTS[1]
+elif num_papers <= 1:
+    num_readers = 1
+elif num_papers <= 5:
+    num_readers = num_papers          # one reader per paper
+elif num_papers <= 15:
+    num_readers = ceil(num_papers/2)  # two papers per reader
+else:
+    num_readers = ceil(num_papers/3)  # three papers per reader
+```
 
-### Agent Roles
+### Total Agents = num_readers + 2
 
-**Reader** — The paper analyst
-- Reads each paper (PDFs, arxiv pages, or searches for papers by topic)
-- Extracts structured summaries: problem, method, key results, limitations, connections
-- Identifies which papers cite or build on each other
-- Tags terminology that may need explanation
-- Produces a consistent per-paper summary in a standard format
+- **1 Scaffolder** (runs in Phase 0 and Phase 2)
+- **N Readers** (run in parallel in Phase 1)
+- **1 Synthesizer** (runs in Phase 3)
 
-**Scaffolder** — The terminology explainer
-- Receives the reader's paper summaries and tagged terminology
-- Explains each unfamiliar concept in plain language with examples
-- Builds a glossary organized by concept area
-- Adds context: why this concept matters, how it connects to other concepts
-- Identifies prerequisite knowledge chains (concept A requires understanding concept B)
-- Produces a "Concept Guide" document the user can reference alongside the review
+### Paper Assignment
 
-**Synthesizer** — The review writer
-- Receives paper summaries + concept guide
-- Organizes papers into a taxonomy (by approach, by problem, by chronology — whichever fits)
-- Identifies themes, trends, gaps, and contradictions across papers
-- Writes the actual literature review as flowing prose (not bullet points)
-- Ensures every claim cites the source paper
-- Highlights the research gap that motivates the user's work (if specified in the plan)
+Distribute papers across readers as evenly as possible. When grouping multiple papers per reader, group by sub-topic if possible (e.g., all RL papers to one reader, all imitation learning papers to another).
 
 ## Step 3: Set Up Agent Team
+
+Create the team:
+
+```
+TeamCreate with team_name: "lit-review"
+```
 
 Enable tmux split panes:
 
@@ -67,67 +202,211 @@ Enable tmux split panes:
 teammateMode: "tmux"
 ```
 
-Enter **Delegate Mode** (Shift+Tab). You coordinate — you do not read papers or write the review yourself.
+Enter **Delegate Mode** (Shift+Tab). You coordinate -- you do not read papers or write the review yourself.
 
-## Step 4: Spec-First Spawning
+## Step 4: Phase 0 -- Schema Generation (Scaffolder)
 
-### Artifact Chain
+**Spawn the Scaffolder FIRST, before any readers.**
+
+The Scaffolder's Phase 0 task is to analyze the research question and produce an **extraction schema** -- a structured template that all parallel readers will fill out. This ensures every reader produces output in the exact same format, tailored to the specific research question.
+
+### Scaffolder Phase 0 Prompt
 
 ```
-Reader    → publishes paper summaries + tagged terms    → Scaffolder, Synthesizer
-Scaffolder → publishes concept guide + glossary          → Synthesizer
-Synthesizer → produces final literature review           → Lead
+You are the Scaffolder agent for this literature review.
+
+## Phase 0 Task: Generate Extraction Schema
+
+Analyze this research question and produce a JSON extraction schema that readers will fill out for each paper.
+
+Research question: [FROM PLAN]
+User background: [FROM PLAN]
+Target output: [FROM PLAN]
+
+## What You Must Produce
+
+A markdown file at [output-dir]/extraction_schema.md containing:
+
+### 1. Extraction Schema
+
+A structured template with fields tailored to the research question. ALWAYS include these base fields:
+
+- paper_id (string: "paper_01", "paper_02", etc.)
+- title (string)
+- authors (string)
+- year (number)
+- source (string: URL, PDF path, or venue)
+- problem (string: 2-3 sentences)
+- method (string: 3-5 sentences)
+- key_results (list of strings with numbers where available)
+- limitations (list of strings)
+- connections.builds_on (list of paper_ids or paper names)
+- connections.compared_against (list of baselines)
+- tagged_terms (list of {term, context} objects)
+
+PLUS domain-specific fields based on the research question. Examples:
+- For an RL survey: algorithm_family, state_representation, action_space, reward_design, environment
+- For an NLP survey: model_architecture, pretraining_data, task_type, language_support
+- For a CV survey: backbone, input_modality, dataset, inference_speed
+
+### 2. Reading Instructions
+
+Brief guidance for readers on what to focus on given the research question. What aspects matter most? What can be skimmed?
+
+### 3. Paper ID Assignment
+
+List each paper with its assigned paper_id for cross-referencing:
+- paper_01: [Paper Title or URL]
+- paper_02: [Paper Title or URL]
+- ...
+
+## Before Reporting Done
+- Schema covers the research question's key dimensions
+- Base fields are all present
+- Domain-specific fields are relevant (not generic filler)
+- Paper IDs are assigned to every paper in the plan
+- Reading instructions are actionable
+
+Send the schema to the lead via SendMessage when done.
 ```
 
-The reader MUST publish before the scaffolder and synthesizer begin. The scaffolder MUST publish before the synthesizer writes the review.
+**Lead receives schema, verifies:**
+- Does the schema capture the key dimensions of the research question?
+- Are all papers assigned IDs?
+- Are domain-specific fields relevant?
 
-### Spawn Order
+## Step 5: Phase 1 -- Parallel Reading (Map)
 
-1. **Spawn the Reader first**
-2. Reader's FIRST task: read all papers, produce structured summaries in the agreed format, tag unfamiliar terms
-3. Reader sends summaries to lead via SendMessage
-4. **Lead verifies**: Are summaries complete? Is the format consistent? Are terms tagged?
-5. **Lead forwards verified summaries to Scaffolder**
-6. Scaffolder produces concept guide and glossary
-7. Scaffolder sends to lead via SendMessage
-8. **Lead verifies**: Are all tagged terms explained? Are explanations clear and accurate?
-9. **Lead forwards both summaries + concept guide to Synthesizer**
-10. Synthesizer writes the literature review
+**This is the critical parallelization step.** Spawn ALL reader agents simultaneously using multiple Task tool calls in a SINGLE message.
 
-### Paper Summary Format (Reader Must Follow)
+### How to Spawn Readers in Parallel
 
-The lead must instruct the Reader to produce summaries in this exact format for each paper:
+You MUST spawn all readers in the same message to achieve parallelism. Example for 4 papers with 4 readers:
 
-```markdown
-## [Paper Title] ([Authors, Year])
-**Source**: [arxiv URL / PDF path / venue]
+```
+In a SINGLE response, make 4 Task tool calls:
+  Task(name="reader-1", prompt="...", team_name="lit-review")
+  Task(name="reader-2", prompt="...", team_name="lit-review")
+  Task(name="reader-3", prompt="...", team_name="lit-review")
+  Task(name="reader-4", prompt="...", team_name="lit-review")
+```
+
+**CRITICAL: All Task calls MUST be in the same message. If you spawn them in separate messages, they run sequentially and you lose all parallelism.**
+
+### Reader Prompt Template
+
+Each reader gets this prompt, customized with their assigned papers and the schema:
+
+```
+You are Reader agent [N] for this literature review.
+
+## Your Assignment
+Read the following paper(s) and extract structured data using the schema below.
+
+### Paper(s) to Read
+[List of papers assigned to this reader with their paper_ids]
+
+### Extraction Schema
+[PASTE THE FULL SCHEMA FROM SCAFFOLDER]
+
+### Reading Instructions
+[PASTE THE READING INSTRUCTIONS FROM SCAFFOLDER]
+
+## How to Read Papers
+
+**arxiv URLs** (https://arxiv.org/abs/XXXX.XXXXX):
+- Use WebFetch to read the arxiv abstract page
+- For full paper, fetch HTML version at https://arxiv.org/html/XXXX.XXXXX if available
+- Fall back to abstract + related work if full text too long
+
+**Local PDF files** (./papers/some-paper.pdf):
+- Use Read tool to read PDF files directly
+- For large PDFs (>10 pages), read in page ranges
+
+**Paper titles or topics** (no URL given):
+- Use WebSearch to find the paper on arxiv or Semantic Scholar
+- Then proceed as with arxiv URLs
+
+**DOI links** (https://doi.org/...):
+- Use WebFetch to resolve the DOI
+
+## Output
+
+Write your extraction(s) to: [output-dir]/reader_[N]_extractions.md
+
+Use this format for each paper:
+
+---
+## paper_id: [ID]
+
+**title**: [Title]
+**authors**: [Authors]
+**year**: [Year]
+**source**: [URL/path]
 
 ### Problem
-What problem does this paper address? (2-3 sentences)
+[2-3 sentences]
 
 ### Method
-What is their approach? (3-5 sentences, enough to understand the key idea)
+[3-5 sentences]
 
 ### Key Results
-- [Result 1 with numbers if available]
-- [Result 2]
+- [result with numbers]
 
 ### Limitations
-- [Limitation 1]
+- [limitation]
+
+### Domain-Specific Fields
+[Fill out each domain-specific field from the schema]
 
 ### Connections
-- Builds on: [prior work this paper extends]
-- Compared against: [baselines used]
-- Cited by / extended by: [later papers in the review set, if known]
+- builds_on: [prior work]
+- compared_against: [baselines]
 
 ### Tagged Terms
-- `[term 1]`: used in context of [how it appears in this paper]
-- `[term 2]`: used in context of [...]
+- `[term]`: [context of how it appears in this paper]
+---
+
+## Before Reporting Done
+- Every assigned paper has a complete extraction
+- All schema fields are filled (use "N/A" only if truly not applicable)
+- Tagged terms include any concept that might need explanation
+- Connections to other papers in the review set are noted where known
+- No paper is summarized from title/abstract alone when full text is available
+
+Send your completed extractions to the lead via SendMessage when done.
 ```
 
-### Concept Guide Format (Scaffolder Must Follow)
+### Lead Collects All Reader Results
 
-```markdown
+As each reader finishes (they may finish at different times), collect their extractions. **Wait for ALL readers to complete before proceeding to Phase 2.**
+
+**Lead checks for each reader:**
+- Every assigned paper has an extraction
+- All schema fields are filled
+- Terms are tagged
+- If a reader missed a paper or produced shallow output, send them back with specific feedback
+
+## Step 6: Phase 2 -- Terminology (Scaffolder)
+
+Once all readers are done, send ALL extractions to the Scaffolder for Phase 2.
+
+### Scaffolder Phase 2 Prompt
+
+```
+You are the Scaffolder agent, now in Phase 2: Terminology.
+
+## Your Input
+Below are the structured extractions from all readers. Your job is to build a concept guide from all tagged terms.
+
+[PASTE ALL READER EXTRACTIONS]
+
+## What You Must Produce
+
+Write to: [output-dir]/concept_guide.md
+
+### Concept Guide Format
+
 # Concept Guide
 
 ## Core Concepts
@@ -137,109 +416,123 @@ What is their approach? (3-5 sentences, enough to understand the key idea)
 **Why it matters**: [why this concept is important in this research area]
 **Example**: [concrete example to build intuition]
 **Prerequisite concepts**: [other concepts needed to understand this one]
-**Papers that use this**: [which papers from the review use this term]
+**Papers that use this**: [list paper_ids]
+
+[Repeat for each tagged term across ALL readers]
 
 ## Concept Map
-[How concepts relate to each other — which are prerequisites for which, which are alternatives to each other, which are specializations of a broader concept]
+[How concepts relate -- prerequisites, alternatives, specializations]
 
 ## Notation Guide
-[If papers use mathematical notation, list symbols and their meanings]
+[If papers use math notation]
 | Symbol | Meaning | Used in |
 |--------|---------|---------|
-| π      | policy  | [papers] |
-| ...    | ...     | ...     |
-```
-
-### Spawn Prompt Structure
-
-```
-You are the [ROLE] agent for this literature review.
-
-## Your Ownership
-- You own: [output files]
-- Do NOT touch: [other agents' files]
-
-## What You're Producing
-[Role-specific deliverable description]
-
-## Papers to Process
-[Paper list from the plan — for Reader only]
-
-## The Specification You Must Conform To
-[Upstream agent's output — for Scaffolder and Synthesizer]
-
-## Output Format
-[Exact format template from above]
+| ...    | ...     | paper_ids |
 
 ## Before Reporting Done
-[Validation checklist]
+- EVERY tagged term from ALL readers is explained
+- Explanations use plain language appropriate to: [USER BACKGROUND FROM PLAN]
+- Each explanation includes a concrete example
+- Prerequisite chains are identified
+- Notation guide covers all mathematical symbols
+- Concept map shows relationships between concepts
+- Terms are deduplicated (same concept tagged differently by different readers = one entry)
+
+Send the concept guide to the lead via SendMessage when done.
 ```
 
-## Step 5: Facilitate Collaboration
+**Lead checks:**
+- Collect all unique tagged terms from all readers
+- Verify every term appears in the concept guide
+- Verify explanations match the user's background level
+- Check for deduplication (different readers may tag the same concept differently)
 
-### Phase 1: Reading (Reader works, others wait)
+## Step 7: Phase 3 -- Synthesis (Reduce)
 
-The Reader processes all papers. For each paper, they:
-1. Read the full paper (fetch arxiv page, read PDF, or search for it)
-2. Extract the structured summary in the agreed format
-3. Tag unfamiliar or domain-specific terms
-4. Note connections between papers
+Send ALL reader extractions + concept guide to the Synthesizer.
 
-**Lead checks**: When Reader sends summaries, verify:
-- Every paper from the plan has a summary
-- Summaries follow the exact format
-- Terms are tagged consistently
-- Connections between papers are noted
+### Synthesizer Prompt
 
-### Phase 2: Scaffolding (Scaffolder works, Synthesizer waits)
+```
+You are the Synthesizer agent for this literature review.
 
-The Scaffolder receives all paper summaries and:
-1. Collects all tagged terms across all papers
-2. Researches and explains each term at the appropriate level
-3. Identifies prerequisite chains (concept A requires B)
-4. Builds the concept map showing relationships
-5. Creates notation guide if papers use math
+## Your Input
 
-**Lead checks**: When Scaffolder sends the concept guide, verify:
-- Every tagged term has an explanation
-- Explanations are at the right level for the user's background
-- Prerequisite chains are identified
-- The concept map is coherent
+### Research Question
+[FROM PLAN]
 
-### Phase 3: Synthesis (Synthesizer writes the review)
+### Structured Paper Extractions
+[PASTE ALL READER EXTRACTIONS -- these are structured, schema-conformant data]
 
-The Synthesizer receives both summaries and concept guide, then:
-1. Groups papers into a taxonomy (by approach, problem, chronology)
-2. Identifies themes, trends, and gaps
-3. Writes flowing prose organized by theme
-4. Cites every claim
-5. Highlights the research gap (if user specified their own work's context)
+### Concept Guide
+[PASTE CONCEPT GUIDE FROM SCAFFOLDER]
 
-**Lead checks**: When Synthesizer sends the draft, verify:
-- All papers from the plan are cited
-- Organization is by theme/taxonomy, not just paper-by-paper summaries
-- Claims are supported by citations
-- The research gap is clearly articulated
-- Prose flows naturally (no bullet-point dumps in the final review)
+### Research Context
+[User's own work context, if specified in plan -- for identifying the research gap]
 
-### Phase 4: Assembly
+## What You Must Produce
+
+Write to: [output-dir]/literature_review.md
+
+A thematic literature review in flowing prose. NOT an annotated bibliography.
+
+### Requirements
+1. **Organize by theme/approach/taxonomy** -- NOT paper-by-paper
+2. **Group papers** that share methods, tackle similar problems, or reach comparable conclusions
+3. **Identify trends**: how has the field evolved? what directions are gaining traction?
+4. **Identify gaps**: what hasn't been tried? where do existing methods fall short?
+5. **Identify contradictions**: do papers disagree on findings? why?
+6. **Cite every claim**: use (Author, Year) format or [paper_id] -- every factual statement needs a citation
+7. **Use terminology consistently** with the concept guide
+8. **Highlight the research gap** that motivates the user's work (if research context provided)
+9. **Write flowing prose** -- no bullet-point sections in the final review
+
+### Structure Guide
+- Introduction: frame the research area and question
+- Body: 2-4 thematic sections grouping related work
+- Analysis: trends, gaps, contradictions across the body
+- Conclusion: state of the field + where opportunities lie
+
+## Before Reporting Done
+- All papers from the plan are cited at least once
+- Organization is thematic (NOT paper-by-paper)
+- Every factual claim cites a specific paper
+- Research gap is clearly stated (if applicable)
+- Prose flows naturally
+- Terminology is consistent with the concept guide
+
+Send the completed review to the lead via SendMessage when done.
+```
+
+**Lead checks:**
+- All papers are cited (cross-check paper_ids against plan)
+- Organization is thematic
+- Claims are cited
+- Prose quality is acceptable
+
+## Step 8: Assembly
 
 The lead assembles the final output:
-1. Literature review document (from Synthesizer)
-2. Concept guide as appendix or companion document (from Scaffolder)
-3. Full paper summaries as reference (from Reader)
 
-## Reading Papers — How Each Source Type Works
+1. **Literature review** (from Synthesizer) -- the primary deliverable
+2. **Concept guide** as appendix (from Scaffolder Phase 2)
+3. **Paper extractions** as reference appendix (from all Readers)
 
-Instruct the Reader agent on how to handle different paper sources:
+Write the assembled document to `[output-dir]/full_review.md` or the path specified in the plan.
+
+Report completion with file paths for all deliverables.
+
+## Reading Papers -- Source Type Reference
+
+Include these instructions when spawning Reader agents:
 
 **arxiv URLs** (`https://arxiv.org/abs/XXXX.XXXXX`):
 - Use WebFetch to read the arxiv abstract page
-- For full paper content, fetch the HTML version at `https://arxiv.org/html/XXXX.XXXXX` if available
-- Fall back to the abstract + related work section if full text is too long
+- For full paper content, fetch HTML version at `https://arxiv.org/html/XXXX.XXXXX` if available
+- Fall back to abstract + related work if full text too long
 
 **Local PDF files** (`./papers/some-paper.pdf`):
-- Use the Read tool to read PDF files directly (supports PDF reading)
+- Use Read tool to read PDF files directly
 - For large PDFs, read specific page ranges
 
 **Paper titles or topics** (no URL given):
@@ -247,107 +540,124 @@ Instruct the Reader agent on how to handle different paper sources:
 - Then proceed as with arxiv URLs
 
 **DOI links** (`https://doi.org/...`):
-- Use WebFetch to resolve the DOI and find the paper
+- Use WebFetch to resolve the DOI
 
-## Collaboration Anti-Patterns
+## Anti-Patterns
 
-**Anti-pattern: Parallel reading + writing** (synthesizer guesses)
+**Anti-pattern: Sequential readers** (loses all parallelism)
 ```
-Reader and Synthesizer start simultaneously
-Synthesizer writes review based on paper titles only
-Reader finishes with different understanding of the papers ❌
+Spawn Reader_1, wait, spawn Reader_2, wait, ...
+All readers run one after another
+No time savings over single reader  !!WRONG!!
 ```
 
-**Anti-pattern: Skipping scaffolding** (user can't follow the review)
+**Anti-pattern: Readers without schema** (inconsistent output)
 ```
-Reader → Synthesizer directly
-Review is full of unexplained jargon
-User has to look up every other term ❌
+Skip Phase 0, spawn readers immediately
+Each reader invents their own summary format
+Synthesizer can't compare structured data  !!WRONG!!
+```
+
+**Anti-pattern: Skipping scaffolding** (jargon-filled review)
+```
+Readers -> Synthesizer directly
+Review uses unexplained terminology
+User can't follow the review  !!WRONG!!
 ```
 
 **Anti-pattern: Paper-by-paper review** (no synthesis)
 ```
 Synthesizer writes one section per paper
-Result is an annotated bibliography, not a literature review
-No themes, trends, or gaps identified ❌
+Result is annotated bibliography
+No themes, trends, or gaps  !!WRONG!!
 ```
 
-**Good pattern: Sequential with lead relay**
+**Good pattern: Schema-First Map-Reduce**
 ```
-Reader produces summaries → Lead verifies → forwards to Scaffolder
-Scaffolder produces concept guide → Lead verifies → forwards with summaries to Synthesizer
-Synthesizer writes thematic review referencing concept guide ✅
+Scaffolder defines schema -> Lead spawns ALL readers in ONE message ->
+Readers work in PARALLEL -> Scaffolder explains terms ->
+Synthesizer reduces structured data into thematic review  CORRECT
 ```
 
-## Common Pitfalls to Prevent
+## Common Pitfalls
 
-1. **Missing papers**: Reader skips a paper from the plan → Lead cross-checks every paper
-2. **Shallow summaries**: "This paper does X" without explaining how → Require method details
-3. **Jargon in scaffolding**: Scaffolder explains terms using equally obscure terms → Require plain language + examples
-4. **Annotated bibliography instead of review**: One section per paper → Require thematic organization
-5. **Uncited claims**: "Recent work has shown..." → Every claim must cite a specific paper
-6. **Missing connections**: Papers treated in isolation → Reader must note which papers cite/extend each other
-7. **Wrong background level**: PhD-level explanations for someone learning the area → Check user's stated background
-8. **Stale format**: Summaries drift from the agreed format → Lead enforces format on first batch before continuing
+1. **Spawning readers in separate messages**: They run sequentially. ALL reader Task calls must be in ONE message.
+2. **Missing papers**: A reader skips an assigned paper -> Lead cross-checks every paper_id.
+3. **Shallow extractions**: "This paper does X" without method details -> Send reader back with specific feedback.
+4. **Schema drift**: Reader ignores domain-specific fields -> Lead checks schema compliance before Phase 2.
+5. **Term duplication**: Different readers tag the same concept with different names -> Scaffolder must deduplicate.
+6. **Wrong background level**: PhD-level explanations for a learner -> Check plan's stated background level.
+7. **Uncited claims**: "Recent work shows..." -> Every claim must cite a specific paper_id.
 
 ## Definition of Done
 
 The review is complete when:
-1. Every paper from the plan has a structured summary
+1. Every paper from the plan has a structured extraction conforming to the schema
 2. Every tagged term has a clear explanation in the concept guide
 3. The literature review is organized thematically with proper citations
 4. The research gap is articulated (if applicable)
-5. The concept guide covers prerequisite chains
-6. **Lead has verified all three deliverables are consistent**
+5. All deliverables are written to the output directory
+6. **Lead has verified consistency across all deliverables**
 
 ## Validation
 
-### Reader Validation
-- [ ] Every paper from the plan has a summary
-- [ ] Summaries follow the exact agreed format
-- [ ] Tagged terms are consistent (same term tagged the same way across papers)
-- [ ] Connections between papers are noted
-- [ ] No paper is summarized from title/abstract alone when full text is available
+### Schema Validation (Phase 0)
+- [ ] Schema includes all base fields
+- [ ] Domain-specific fields match the research question
+- [ ] All papers have assigned paper_ids
+- [ ] Reading instructions are actionable
 
-### Scaffolder Validation
-- [ ] Every tagged term from the Reader is explained
-- [ ] Explanations use plain language appropriate to user's background
+### Reader Validation (Phase 1, per reader)
+- [ ] Every assigned paper has an extraction
+- [ ] All schema fields are filled
+- [ ] Tagged terms include domain-specific concepts
+- [ ] Connections to other papers noted where known
+- [ ] No paper summarized from title/abstract alone when full text available
+
+### Scaffolder Validation (Phase 2)
+- [ ] Every tagged term from ALL readers is explained
+- [ ] Duplicate terms across readers are merged
+- [ ] Explanations use plain language at user's level
 - [ ] Each explanation includes a concrete example
-- [ ] Prerequisite chains are identified
-- [ ] Notation guide covers all mathematical symbols used across papers
-- [ ] Concept map shows relationships between concepts
+- [ ] Prerequisite chains identified
+- [ ] Notation guide covers all symbols
 
-### Synthesizer Validation
-- [ ] All papers from the plan are cited in the review
+### Synthesizer Validation (Phase 3)
+- [ ] All papers cited in the review
 - [ ] Organization is thematic (NOT paper-by-paper)
 - [ ] Every factual claim cites a specific paper
-- [ ] Research gap is clearly stated (if applicable)
-- [ ] Prose flows naturally — no bullet-point sections in the final review
-- [ ] Terminology usage is consistent with the concept guide
+- [ ] Research gap clearly stated (if applicable)
+- [ ] Prose flows naturally
+- [ ] Terminology consistent with concept guide
 
 ### Lead Validation (End-to-End)
-- [ ] Paper count: number of summaries matches number of papers in the plan
-- [ ] Term coverage: every tagged term appears in the concept guide
-- [ ] Citation coverage: every paper appears in the literature review
-- [ ] Consistency: terminology in review matches concept guide definitions
-- [ ] Readability: a reader with the stated background can follow the review using the concept guide
+- [ ] Paper count: extractions match plan paper count
+- [ ] Term coverage: every tagged term in concept guide
+- [ ] Citation coverage: every paper appears in review
+- [ ] Schema compliance: all extractions follow the schema
+- [ ] Consistency: terminology in review matches concept guide
+- [ ] Readability: user with stated background can follow the review
 
 ---
 
 ## Execute
 
-Now read the review plan at `$ARGUMENTS[0]` and begin:
+### If `$ARGUMENTS[0]` is provided and non-empty:
 
-1. Read and understand the review plan
-2. Count papers, identify source types (arxiv, PDF, topic search)
-3. Determine team size (use `$ARGUMENTS[1]` if provided, default to 3)
-4. Define agent roles with ownership and output format
-5. Enter Delegate Mode
-6. **Spawn Reader** — first task is producing all paper summaries in the agreed format
-7. **Receive and verify summaries** — check format, completeness, tagged terms
-8. **Forward to Scaffolder** — include the full summaries and tagged term list
-9. **Receive and verify concept guide** — check term coverage, explanation quality
-10. **Forward summaries + concept guide to Synthesizer** — include both, plus the user's research context
-11. **Receive and verify literature review** — check thematic organization, citations, prose quality
-12. Assemble final output: review + concept guide + paper summaries
-13. Report completion with file paths for all deliverables
+1. Read and understand the review plan at `$ARGUMENTS[0]`
+2. Count papers, identify source types, determine num_readers
+3. Assign papers to readers (distribute evenly, group by sub-topic if possible)
+4. Create team and enter Delegate Mode
+5. **Phase 0**: Spawn Scaffolder -> receive extraction schema -> verify
+6. **Phase 1**: Spawn ALL readers in a SINGLE message (parallel) -> collect all extractions -> verify each
+7. **Phase 2**: Send all extractions to Scaffolder for terminology -> receive concept guide -> verify
+8. **Phase 3**: Send all extractions + concept guide to Synthesizer -> receive review -> verify
+9. Assemble final output: review + concept guide + extractions
+10. Shut down teammates, report completion with file paths
+
+### If `$ARGUMENTS[0]` is empty or not provided:
+
+1. **Interactive Plan Builder**: Ask the user questions using AskUserQuestion (see Step 0, Path B)
+2. Generate the plan markdown and save to `./lit-review-plan.md`
+3. Show the user the generated plan and confirm before proceeding
+4. Then follow steps 1-10 above using the generated plan
