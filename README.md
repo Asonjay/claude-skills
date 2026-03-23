@@ -48,10 +48,11 @@ These are auto-installed by Claude Code when enabled in `settings.json`:
 | `post-training` | `ai-research-skills` | GRPO, RLHF, DPO, SimPO, TRL, veRL guidance |
 | `inference-serving` | `ai-research-skills` | vLLM, SGLang, TensorRT-LLM, llama.cpp guidance |
 | `frontend-design` | `anthropics-claude-code` | Production-grade frontend UI with bold design choices, typography, animations |
+| `planning-with-files` | `planning-with-files` | Manus-style persistent markdown planning, progress tracking, knowledge storage |
 
 Plugin format: `<plugin-name>@<marketplace-name>`. Claude Code resolves marketplace names to GitHub repos and downloads them to `~/.claude/plugins/cache/`.
 
-The `frontend-design` plugin requires the `anthropics/claude-code` marketplace (the installer adds it automatically, or run `claude plugin marketplace add anthropics/claude-code`).
+The `frontend-design` and `planning-with-files` plugins require extra marketplaces (the installer adds them automatically, or run `claude plugin marketplace add anthropics/claude-code` and `claude plugin marketplace add OthmanAdi/planning-with-files`).
 
 ## Custom Skills
 

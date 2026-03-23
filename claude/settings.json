@@ -43,13 +43,20 @@
     "fine-tuning@ai-research-skills": true,
     "post-training@ai-research-skills": true,
     "inference-serving@ai-research-skills": true,
-    "frontend-design@anthropics-claude-code": true
+    "frontend-design@anthropics-claude-code": true,
+    "planning-with-files@planning-with-files": true
   },
   "extraKnownMarketplaces": {
     "anthropics-claude-code": {
       "source": {
         "source": "github",
         "repo": "anthropics/claude-code"
+      }
+    },
+    "planning-with-files": {
+      "source": {
+        "source": "github",
+        "repo": "OthmanAdi/planning-with-files"
       }
     }
   }

@@ -221,14 +221,17 @@ if $install_claude; then
     # Marketplaces — add anthropics/claude-code if claude CLI is available
     if command -v claude &>/dev/null; then
         printf "\n"
-        info "Adding anthropics/claude-code marketplace (for frontend-design plugin)..."
-        claude plugin marketplace add anthropics/claude-code 2>/dev/null \
-            && success "Added anthropics/claude-code marketplace" \
-            || printf "  ${DIM}marketplace may already be added, or claude not authenticated${RESET}\n"
+        info "Adding plugin marketplaces..."
+        for marketplace in "anthropics/claude-code" "OthmanAdi/planning-with-files"; do
+            claude plugin marketplace add "$marketplace" 2>/dev/null \
+                && success "Added $marketplace marketplace" \
+                || printf "  ${DIM}$marketplace — may already be added, or claude not authenticated${RESET}\n"
+        done
     else
         printf "\n"
         warn "claude CLI not found — after installing Claude Code, run:"
         printf "    ${DIM}claude plugin marketplace add anthropics/claude-code${RESET}\n"
+        printf "    ${DIM}claude plugin marketplace add OthmanAdi/planning-with-files${RESET}\n"
     fi
 
     # Plugins — remind user
