@@ -1,0 +1,6 @@
+# Suppress EOF message
+bleopt prompt_eol_mark=''
+
+# Disable bell
+bleopt edit_abell=
+bleopt edit_vbell=

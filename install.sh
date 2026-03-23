@@ -112,6 +112,21 @@ if $install_terminal; then
         printf "  ${DIM}tmux already installed${RESET}\n"
     fi
 
+    # Install ble.sh if missing
+    if [ ! -d "$HOME/.local/share/blesh" ]; then
+        read -rp "  ble.sh not found. Install it? [Y/n]: " install_blesh
+        if [[ ! "$install_blesh" =~ ^[Nn]$ ]]; then
+            info "Installing ble.sh..."
+            git clone --recursive --depth 1 --shallow-submodules https://github.com/akinomyoga/ble.sh.git /tmp/ble.sh \
+                && make -C /tmp/ble.sh install PREFIX="$HOME/.local" \
+                && success "Installed ble.sh" \
+                || error "Failed to install ble.sh (requires make and gawk)"
+            rm -rf /tmp/ble.sh
+        fi
+    else
+        printf "  ${DIM}ble.sh already installed${RESET}\n"
+    fi
+
     # Install starship if missing
     if ! command -v starship &>/dev/null; then
         read -rp "  starship not found. Install it? [Y/n]: " install_starship
@@ -133,6 +148,20 @@ if $install_terminal; then
     # starship config
     mkdir -p "$HOME/.config"
     backup_and_link "$DOTFILES_DIR/terminal/starship.toml" "$HOME/.config/starship.toml"
+
+    # ble.sh config
+    backup_and_link "$DOTFILES_DIR/terminal/.blerc" "$HOME/.blerc"
+
+    # Check if ble.sh is sourced in shell rc
+    if ! grep -q 'blesh/ble.sh' "$HOME/.bashrc" 2>/dev/null; then
+        read -rp "  Add ble.sh source to .bashrc? [y/N]: " add_blesh
+        if [[ "$add_blesh" =~ ^[Yy]$ ]]; then
+            printf '\n# ble.sh syntax highlighting\n[[ $- == *i* ]] && source ~/.local/share/blesh/ble.sh\n' >> "$HOME/.bashrc"
+            success "Added ble.sh source to .bashrc"
+        fi
+    else
+        printf "  ${DIM}ble.sh already sourced in .bashrc${RESET}\n"
+    fi
 
     # Check if starship init is in shell rc
     if ! grep -q 'starship init' "$HOME/.bashrc" 2>/dev/null; then

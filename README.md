@@ -7,6 +7,7 @@ Personal terminal and Claude Code configuration.
 ```
 terminal/
   .tmux.conf             # tmux config (mouse, scrollback, sync-panes)
+  .blerc                 # ble.sh config (suppress EOF, disable bell)
   starship.toml          # Starship prompt theme
 
 claude/
@@ -29,7 +30,7 @@ cd dotfiles
 
 The interactive installer lets you pick what to set up:
 
-1. **Terminal** — symlinks tmux and starship configs, optionally adds starship init to `.bashrc`
+1. **Terminal** — installs tmux, ble.sh, starship if missing; symlinks configs; optionally adds shell init to `.bashrc`
 2. **Claude Code** — copies settings/hooks, symlinks skills, adds the `anthropics/claude-code` marketplace, checks for notification dependencies (`paplay`, `notify-send`)
 3. **Everything**
 
