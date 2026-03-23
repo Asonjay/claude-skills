@@ -40,10 +40,7 @@
   "enabledPlugins": {
     "document-skills@anthropic-agent-skills": true,
     "superpowers@claude-plugins-official": true,
-    "fine-tuning@ai-research-skills": true,
-    "post-training@ai-research-skills": true,
-    "inference-serving@ai-research-skills": true,
-    "frontend-design@anthropics-claude-code": true,
+"frontend-design@anthropics-claude-code": true,
     "planning-with-files@planning-with-files": true
   },
   "extraKnownMarketplaces": {

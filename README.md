@@ -44,9 +44,6 @@ These are auto-installed by Claude Code when enabled in `settings.json`:
 |--------|------------|------------------|
 | `superpowers` | `claude-plugins-official` | Development workflows: brainstorming, TDD, debugging, code review, git worktrees, parallel agents |
 | `document-skills` | `anthropic-agent-skills` | PDF, DOCX, PPTX, XLSX manipulation, web artifacts, MCP builder |
-| `fine-tuning` | `ai-research-skills` | Axolotl, LLaMA-Factory, PEFT, Unsloth guidance |
-| `post-training` | `ai-research-skills` | GRPO, RLHF, DPO, SimPO, TRL, veRL guidance |
-| `inference-serving` | `ai-research-skills` | vLLM, SGLang, TensorRT-LLM, llama.cpp guidance |
 | `frontend-design` | `anthropics-claude-code` | Production-grade frontend UI with bold design choices, typography, animations |
 | `planning-with-files` | `planning-with-files` | Manus-style persistent markdown planning, progress tracking, knowledge storage |
 
