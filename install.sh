@@ -84,13 +84,53 @@ esac
 if $install_terminal; then
     printf "${BOLD}  ── Terminal ──${RESET}\n\n"
 
-    # tmux
+    # Install tmux if missing
+    if ! command -v tmux &>/dev/null; then
+        read -rp "  tmux not found. Install it? [Y/n]: " install_tmux
+        if [[ ! "$install_tmux" =~ ^[Nn]$ ]]; then
+            if command -v apt-get &>/dev/null; then
+                sudo apt-get update -qq && sudo apt-get install -y -qq tmux \
+                    && success "Installed tmux" \
+                    || error "Failed to install tmux"
+            elif command -v brew &>/dev/null; then
+                brew install tmux \
+                    && success "Installed tmux" \
+                    || error "Failed to install tmux"
+            elif command -v dnf &>/dev/null; then
+                sudo dnf install -y tmux \
+                    && success "Installed tmux" \
+                    || error "Failed to install tmux"
+            elif command -v pacman &>/dev/null; then
+                sudo pacman -S --noconfirm tmux \
+                    && success "Installed tmux" \
+                    || error "Failed to install tmux"
+            else
+                warn "No supported package manager found. Install tmux manually."
+            fi
+        fi
+    else
+        printf "  ${DIM}tmux already installed${RESET}\n"
+    fi
+
+    # Install starship if missing
+    if ! command -v starship &>/dev/null; then
+        read -rp "  starship not found. Install it? [Y/n]: " install_starship
+        if [[ ! "$install_starship" =~ ^[Nn]$ ]]; then
+            curl -sS https://starship.rs/install.sh | sh -s -- -y \
+                && success "Installed starship" \
+                || error "Failed to install starship"
+        fi
+    else
+        printf "  ${DIM}starship already installed${RESET}\n"
+    fi
+
+    # tmux config
     backup_and_link "$DOTFILES_DIR/terminal/.tmux.conf" "$HOME/.tmux.conf"
     if command -v tmux &>/dev/null && [ -n "${TMUX:-}" ]; then
         tmux source-file ~/.tmux.conf 2>/dev/null && success "Reloaded tmux config" || true
     fi
 
-    # starship
+    # starship config
     mkdir -p "$HOME/.config"
     backup_and_link "$DOTFILES_DIR/terminal/starship.toml" "$HOME/.config/starship.toml"
 
