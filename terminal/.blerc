@@ -4,3 +4,6 @@ bleopt prompt_eol_mark=''
 # Disable bell
 bleopt edit_abell=
 bleopt edit_vbell=
+
+# Disable exit status display
+bleopt exec_errexit_mark=

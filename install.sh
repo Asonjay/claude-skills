@@ -199,6 +199,41 @@ if $install_claude; then
         copy_file "$DOTFILES_DIR/claude/settings.json" "$SETTINGS_DEST"
     fi
 
+    # Notification method
+    printf "\n  ${BOLD}Notification method:${RESET}\n"
+    printf "    ${CYAN}1)${RESET} Desktop  ${DIM}(notify-send + sound, for GUI/remote desktop)${RESET}\n"
+    printf "    ${CYAN}2)${RESET} ntfy.sh  ${DIM}(push notifications to phone/browser)${RESET}\n"
+    printf "\n"
+    read -rp "    Choice [1/2]: " notify_choice
+
+    case "$notify_choice" in
+        2)
+            read -rp "    ntfy.sh topic name: " ntfy_topic
+            if [ -n "$ntfy_topic" ]; then
+                # Update settings.json with ntfy config
+                if command -v jq &>/dev/null && [ -e "$SETTINGS_DEST" ]; then
+                    jq --arg method "ntfy" --arg topic "$ntfy_topic" \
+                        '.env.CLAUDE_NOTIFY_METHOD = $method | .env.CLAUDE_NTFY_TOPIC = $topic' \
+                        "$SETTINGS_DEST" > "${SETTINGS_DEST}.tmp" && mv "${SETTINGS_DEST}.tmp" "$SETTINGS_DEST"
+                    success "Set notification method to ntfy (topic: $ntfy_topic)"
+                else
+                    warn "jq not found — manually set CLAUDE_NOTIFY_METHOD and CLAUDE_NTFY_TOPIC in settings.json"
+                fi
+            else
+                warn "No topic provided, defaulting to desktop notifications"
+            fi
+            ;;
+        *)
+            # Remove ntfy env vars if present, keep desktop
+            if command -v jq &>/dev/null && [ -e "$SETTINGS_DEST" ]; then
+                jq 'del(.env.CLAUDE_NOTIFY_METHOD, .env.CLAUDE_NTFY_TOPIC)' \
+                    "$SETTINGS_DEST" > "${SETTINGS_DEST}.tmp" && mv "${SETTINGS_DEST}.tmp" "$SETTINGS_DEST"
+            fi
+            success "Set notification method to desktop"
+            ;;
+    esac
+    printf "\n"
+
     # hooks
     copy_file "$DOTFILES_DIR/claude/hooks/notify.sh" "$CLAUDE_DIR/hooks/notify.sh"
     chmod +x "$CLAUDE_DIR/hooks/notify.sh"
@@ -244,15 +279,21 @@ if $install_claude; then
         printf "    ${DIM}(install jq to list plugins, or check settings.json)${RESET}\n"
     fi
 
-    # Check notify.sh dependency: paplay
+    # Check notify.sh dependencies based on chosen method
     printf "\n"
-    if ! command -v paplay &>/dev/null; then
-        warn "notify.sh uses paplay (pulseaudio-utils) — not found on this system"
-        printf "    ${DIM}Install with: sudo apt install pulseaudio-utils${RESET}\n"
-    fi
-    if ! command -v notify-send &>/dev/null; then
-        warn "notify.sh uses notify-send (libnotify-bin) — not found on this system"
-        printf "    ${DIM}Install with: sudo apt install libnotify-bin${RESET}\n"
+    if [ "${notify_choice:-1}" = "2" ]; then
+        if ! command -v curl &>/dev/null; then
+            warn "ntfy.sh notifications require curl — not found on this system"
+        fi
+    else
+        if ! command -v paplay &>/dev/null; then
+            warn "Desktop notifications use paplay (pulseaudio-utils) — not found on this system"
+            printf "    ${DIM}Install with: sudo apt install pulseaudio-utils${RESET}\n"
+        fi
+        if ! command -v notify-send &>/dev/null; then
+            warn "Desktop notifications use notify-send (libnotify-bin) — not found on this system"
+            printf "    ${DIM}Install with: sudo apt install libnotify-bin${RESET}\n"
+        fi
     fi
 
     printf "\n"
